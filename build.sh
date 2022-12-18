@@ -47,7 +47,21 @@ LD=${CROSS}ld
 AR=${CROSS}ar
 OBJCPY=${CROSS}objcopy
 
-MAKEFLAGS="--no-print-directory -j 9"
+MAKEFLAGS="--no-print-directory -j$(nproc)"
+
+CC_PATH=$(which $CC)
+#export BINUTILS_TARGET_PREFIX=${CC_PATH%-gcc}
+export GCC_PATH=$(dirname "$CC_PATH") \
+       GCC_CROSS_COMPILE_PREFIX=${CROSS}
+export WLLVM_OUTPUT_LEVEL=INFO \
+       LLVM_COMPILER=hybrid \
+       LLVM_COMPILER_PATH=/usr/lib/llvm-14/bin \
+       LLVM_BITCODE_GENERATION_FLAGS="-D__STDC_NO_ATOMICS__ -D__float128=double -D__unix__ -D__unix -Dunix -D__phoenix__ -D__phoenix -Dphoenix"
+# -D__STDC_NO_ATOMICS__ is a workaround of "error: address argument to atomic operation must be a pointer to integer, pointer or supported floating point type ('_Atomic(int) *' invalid)"
+# -D__float128=double is a workaround of "error: __float128 is not supported on this target"
+mkdir /bin-override
+export PATH=/bin-override:$PATH
+ln -s $(which wllvm) /bin-override/$CC
 
 export TARGET TARGET_FAMILY TARGET_SUBFAMILY TARGET_PROJECT PROJECT_PATH TOPDIR PREFIX_PROJECT PREFIX_BUILD\
 	PREFIX_BUILD_HOST PREFIX_FS PREFIX_BOOT PREFIX_PROG PREFIX_PROG_STRIPPED PREFIX_A\
@@ -192,3 +206,11 @@ fi
 if [ "${B_IMAGE}" = "y" ]; then
 	b_image
 fi
+
+
+# extract bitcode
+for elf in $(find "$PREFIX_PROG" "$PREFIX_PROG_STRIPPED" -type f -exec file '{}' \; | grep -i 'elf 32' | sed 's/:.*//'); do
+  #[ -f "$elf" ] || continue
+  echo "ELF file: $elf"
+  extract-bc "$elf" && "$LLVM_COMPILER_PATH/llvm-dis" "$elf.bc"
+done
